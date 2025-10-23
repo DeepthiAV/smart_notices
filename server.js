@@ -29,10 +29,15 @@ app.use('/uploads', express.static(uploadsDir));
 // Serve static frontend files from "public" folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== MongoDB Connection =====
-mongoose.connect(process.env.MONGO_URI)
+// ===== MongoDB Connection (optional) =====
+const USE_MEM = !process.env.MONGO_URI;
+if (!USE_MEM) {
+  mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
     .catch(err => console.error('❌ MongoDB connection error:', err));
+} else {
+  console.warn('⚠️  MONGO_URI not set. Using in-memory store (data will not persist).');
+}
 
 // ===== User Schema =====
 const userSchema = new mongoose.Schema({
@@ -61,6 +66,13 @@ const resumeAnalysisSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema);
+
+// ===== In-memory fallback stores =====
+const mem = {
+  users: [], // {email, username, password}
+  analyses: [] // {_id, email, originalFilename, mimeType, text, stats, createdAt}
+};
+const newId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 // ===== Multer Storage Config for file upload =====
 const storage = multer.diskStorage({
@@ -148,6 +160,30 @@ function analyzeResumeText(rawText) {
 
     // Suggestions
     const suggestions = [];
+
+    // Word choice improvements (basic heuristic)
+    const improvementMap = {
+        'responsible for': 'led',
+        'worked on': 'delivered',
+        'helped': 'supported',
+        'made': 'created',
+        'did': 'accomplished',
+        'very': 'highly',
+        'hard-working': 'diligent',
+        'team player': 'collaborative',
+        'good': 'strong',
+        'best': 'excellent',
+        'stuff': 'deliverables',
+        'things': 'initiatives',
+        'got': 'achieved'
+    };
+    const wordSuggestions = [];
+    const lowered = text.toLowerCase();
+    Object.entries(improvementMap).forEach(([from, to]) => {
+        if (lowered.includes(from)) {
+            wordSuggestions.push({ from, to, reason: 'Replace vague/weak wording with stronger action.' });
+        }
+    });
     if (missUnique.length > 0) suggestions.push('Fix spelling mistakes; consider a spell checker.');
     if (grammarWarnings.length > 0) suggestions.push('Improve sentence structure; aim for concise bullet points.');
     if (alignmentIssues.length > 0) suggestions.push('Align bullets and sections consistently with uniform spacing.');
@@ -158,6 +194,7 @@ function analyzeResumeText(rawText) {
         grammarWarnings: grammarWarnings.slice(0, 50),
         alignmentIssues,
         fontIssues,
+        wordSuggestions,
         suggestions: suggestions.length ? suggestions : ['Looks good overall; consider quantifying achievements and adding keywords.']
     };
 }
@@ -171,55 +208,73 @@ app.get('/', (req, res) => {
 
 // ===== Auth (new API with email) =====
 app.post('/api/users/check-email', async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (!email) return res.status(400).json({ exists: false, message: 'Email required' });
-        const user = await User.findOne({ email });
-        res.json({ exists: !!user });
-    } catch (err) {
-        res.status(500).json({ exists: false });
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ exists: false, message: 'Email required' });
+    if (USE_MEM) {
+      const user = mem.users.find(u => u.email === email);
+      return res.json({ exists: !!user });
     }
+    const user = await User.findOne({ email });
+    res.json({ exists: !!user });
+  } catch (err) {
+    res.status(500).json({ exists: false });
+  }
 });
 
 app.post('/api/signup', async (req, res) => {
-    try {
-        const { username, email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ success: false, message: 'Email and password required' });
-        }
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: 'Email already exists' });
-        }
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = new User({ username: username || email.split('@')[0], email, password: hashedPassword });
-        await newUser.save();
-        res.json({ success: true, message: 'Signup successful' });
-    } catch (err) {
-        console.error('Signup error:', err);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+  try {
+    const { username, email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password required' });
     }
+    if (USE_MEM) {
+      const existing = mem.users.find(u => u.email === email);
+      if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
+      const hashed = await bcrypt.hash(password, 10);
+      mem.users.push({ email, username: username || email.split('@')[0], password: hashed });
+      return res.json({ success: true, message: 'Signup successful' });
+    }
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'Email already exists' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ username: username || email.split('@')[0], email, password: hashedPassword });
+    await newUser.save();
+    res.json({ success: true, message: 'Signup successful' });
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ success: false, message: 'Email and password required' });
-        }
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ success: false, which: 'email', message: 'Email not found' });
-        }
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ success: false, which: 'password', message: 'Incorrect password' });
-        }
-        res.json({ success: true, message: 'Login successful' });
-    } catch (err) {
-        console.error('Login error:', err);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password required' });
     }
+    if (USE_MEM) {
+      const user = mem.users.find(u => u.email === email);
+      if (!user) return res.status(400).json({ success: false, which: 'email', message: 'Email not found' });
+      const ok = await bcrypt.compare(password, user.password);
+      if (!ok) return res.status(400).json({ success: false, which: 'password', message: 'Incorrect password' });
+      return res.json({ success: true, message: 'Login successful' });
+    }
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ success: false, which: 'email', message: 'Email not found' });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, which: 'password', message: 'Incorrect password' });
+    }
+    res.json({ success: true, message: 'Login successful' });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 // ===== Upload Notice (Normal file upload) =====
@@ -304,15 +359,21 @@ app.post('/api/resume/analyze', upload.single('resume'), async (req, res) => {
         }
 
         const stats = analyzeResumeText(text);
-        const saved = await new ResumeAnalysis({
-            email: email || null,
-            originalFilename: req.file.originalname,
-            mimeType: mime,
-            text,
-            stats
-        }).save();
-
-        res.json({ success: true, analysisId: saved._id.toString(), analysis: saved.stats, limited: mime === 'application/msword' && text.length === 0 });
+        let analysisId = null;
+        if (USE_MEM) {
+            analysisId = newId();
+            mem.analyses.push({ _id: analysisId, email: email || null, originalFilename: req.file.originalname, mimeType: mime, text, stats, createdAt: new Date() });
+            return res.json({ success: true, analysisId, analysis: stats, limited: mime === 'application/msword' && text.length === 0 });
+        } else {
+            const saved = await new ResumeAnalysis({
+                email: email || null,
+                originalFilename: req.file.originalname,
+                mimeType: mime,
+                text,
+                stats
+            }).save();
+            return res.json({ success: true, analysisId: saved._id.toString(), analysis: saved.stats, limited: mime === 'application/msword' && text.length === 0 });
+        }
     } catch (err) {
         console.error('Resume analyze error:', err);
         res.status(500).json({ success: false, message: 'Failed to analyze resume' });
@@ -321,6 +382,11 @@ app.post('/api/resume/analyze', upload.single('resume'), async (req, res) => {
 
 app.get('/api/resume/analysis/:id', async (req, res) => {
     try {
+        if (USE_MEM) {
+            const doc = mem.analyses.find(a => a._id === req.params.id);
+            if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
+            return res.json({ success: true, analysis: doc.stats });
+        }
         const doc = await ResumeAnalysis.findById(req.params.id);
         if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
         res.json({ success: true, analysis: doc.stats });

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mock Interview • Career Mirror</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/css/base.css">
+  <style>
+    .wrap { min-height: calc(100vh - 64px); padding: 24px 16px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .panel { background: var(--card-bg); border: 1px solid #e5e7eb; border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+    .button { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: 0; border-radius: 12px; padding: 10px 14px; cursor: pointer; font-weight: 600; }
+    .input { width: 100%; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; margin-top: 8px; font-family: inherit; }
+    video { width: 100%; border-radius: 12px; background: #000; }
+    .list { margin: 0; padding-left: 18px; }
+    .chat { height: 360px; overflow: auto; background: #fff; border-radius: 12px; padding: 12px; border: 1px solid #e5e7eb; }
+    .bubble { padding: 8px 10px; border-radius: 10px; margin: 6px 0; max-width: 80%; }
+    .ai { background: #eef2ff; }
+    .me { background: #ecfeff; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div class="bg-3d" aria-hidden="true"><div class="orbs"><div class="orb"></div><div class="orb"></div><div class="orb"></div></div></div>
+  <div class="wrap container">
+    <h1 style="margin-bottom: 12px;">Mock Interview</h1>
+    <div class="grid">
+      <div class="panel">
+        <h3>Upload your interview video</h3>
+        <input id="videoInput" type="file" accept="video/*" class="input" />
+        <video id="preview" controls muted></video>
+        <button id="analyze" class="button">Analyze Body Language</button>
+        <ul id="videoResults" class="list"></ul>
+      </div>
+      <div class="panel">
+        <h3>Chat with AI</h3>
+        <div id="chat" class="chat"></div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <input id="chatInput" class="input" placeholder="Ask a mock interview question..." />
+          <button id="send" class="button">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared.js"></script>
+  <script>
+    CareerMirror.ensureBase();
+    CareerMirror.buildNavbar('/upload.html');
+    CareerMirror.buildFooter();
+
+    const videoInput = document.getElementById('videoInput');
+    const preview = document.getElementById('preview');
+    const analyzeBtn = document.getElementById('analyze');
+    const videoResults = document.getElementById('videoResults');
+
+    videoInput.addEventListener('change', () => {
+      const f = videoInput.files && videoInput.files[0];
+      if (f) {
+        preview.src = URL.createObjectURL(f);
+      }
+    });
+
+    analyzeBtn.addEventListener('click', async () => {
+      const f = videoInput.files && videoInput.files[0];
+      videoResults.innerHTML = '';
+      if (!f) return;
+      // Heuristic local analysis: file metadata + length once loaded
+      const sizeMb = (f.size / (1024*1024)).toFixed(2);
+      const li1 = document.createElement('li'); li1.textContent = `Video size: ${sizeMb} MB`;
+      videoResults.appendChild(li1);
+      const track = preview.captureStream().getVideoTracks()[0];
+      if (track) {
+        const settings = track.getSettings();
+        const li2 = document.createElement('li'); li2.textContent = `Resolution: ${settings.width || '?'}x${settings.height || '?'}`;
+        videoResults.appendChild(li2);
+      }
+      // Provide generic feedback prompts
+      const feedback = [
+        'Maintain steady eye contact; avoid looking away frequently.',
+        'Keep posture upright; avoid slouching or fidgeting.',
+        'Project confidence with a clear, steady voice tone.',
+        'Slow down if you speak too fast; add brief pauses.',
+        'Smile naturally to convey warmth and enthusiasm.'
+      ];
+      feedback.forEach(t => { const li = document.createElement('li'); li.textContent = t; videoResults.appendChild(li); });
+    });
+
+    // Chat box simple API-backed
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('send');
+
+    function addBubble(text, cls) {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + cls;
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    addBubble('Hello! Say "ask me" to start.', 'ai');
+
+    async function send() {
+      const text = input.value.trim(); if (!text) return;
+      addBubble(text, 'me'); input.value = '';
+      const res = await fetch('/api/mock/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ message: text }) });
+      const data = await res.json();
+      addBubble(data.reply || '...', 'ai');
+    }
+
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  </script>
+</body>
+</html>
