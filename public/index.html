@@ -101,72 +101,100 @@
 </html>
  -->
 
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Smart Digital Notice Display</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body, html { height: 100%; font-family: 'Segoe UI', sans-serif; }
-        body {
-            background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)),
-                        url('https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1650&q=80') no-repeat center center;
-            background-size: cover;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #fff;
-            padding: 20px;
-        }
-        .container {
-            background-color: rgba(255, 255, 255, 0.05);
-            padding: 50px;
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-            text-align: center;
-        }
-        h1 {
-            font-size: 3em;
-            margin-bottom: 40px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        .buttons {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-        }
-        .buttons a {
-            text-decoration: none;
-            color: white;
-            background-color: #28a745;
-            padding: 15px 35px;
-            border-radius: 30px;
-            font-size: 1.1em;
-            transition: 0.3s;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        }
-        .buttons a.login { background-color: #007bff; }
-        .buttons a:hover { transform: scale(1.05); opacity: 0.9; }
-        @media (max-width: 600px) {
-            h1 { font-size: 2em; }
-            .buttons { flex-direction: column; gap: 20px; }
-            .buttons a { width: 100%; text-align: center; }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Career Mirror</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <style>
+    /* Landing hero with 3D lamp */
+    .hero {
+      min-height: calc(100vh - 64px);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      position: relative;
+      padding: 40px 16px;
+    }
+    .title { font-size: clamp(32px, 5vw, 56px); font-weight: 700; }
+    .subtitle { margin-top: 10px; color: #4b5563; }
+    .lamp-scene { position: relative; width: 320px; height: 360px; margin-top: 24px; }
+    .rope { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 6px; height: 220px; background: linear-gradient(#d1d5db, #9ca3af); border-radius: 3px; box-shadow: inset 0 0 4px rgba(0,0,0,0.2); }
+    .knob { position: absolute; top: 200px; left: 50%; transform: translate(-50%, 0); width: 18px; height: 18px; background: #a78bfa; border-radius: 50%; box-shadow: 0 6px 14px rgba(0,0,0,0.2); cursor: grab; }
+    .lamp { position: absolute; top: 220px; left: 50%; transform: translateX(-50%); width: 160px; height: 90px; background: linear-gradient(180deg, #111827, #1f2937); border-radius: 80px 80px 20px 20px; }
+    .lamp::after { content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; background: #fbbf24; border-radius: 50%; }
+    .glow { position: absolute; top: 260px; left: 50%; transform: translateX(-50%); width: 420px; height: 220px; background: radial-gradient(ellipse at top, rgba(251,191,36,.55), transparent 60%); filter: blur(10px); pointer-events: none; opacity: 0; transition: opacity .25s ease; }
+    .pull-hint { margin-top: 8px; font-size: 0.95rem; color: #6b7280; }
+    .explore { margin-top: 22px; display: inline-block; padding: 12px 18px; border-radius: 12px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff; font-weight:600; }
+  </style>
 </head>
 <body>
-
-<div class="container">
-    <h1>Smart Digital Notice Display</h1>
-    <div class="buttons">
-        <a href="signup.html" class="signup">Signup</a>
-        <a href="login.html" class="login">Login</a>
+  <div class="bg-3d" aria-hidden="true">
+    <div class="orbs">
+      <div class="orb"></div>
+      <div class="orb"></div>
+      <div class="orb"></div>
     </div>
-</div>
+  </div>
 
+  <div class="hero container">
+    <div>
+      <h1 class="title">Career Mirror</h1>
+      <div class="subtitle">Analyze your resume and interview skills with AI guidance.</div>
+      <div class="lamp-scene" id="lampScene">
+        <div class="rope" id="rope"></div>
+        <div class="knob" id="knob" title="Pull to explore"></div>
+        <div class="lamp"></div>
+        <div class="glow" id="glow"></div>
+      </div>
+      <div class="pull-hint">Pull the lamp rope to go to the next page</div>
+      <a href="/upload.html" class="explore">Explore more</a>
+    </div>
+  </div>
+
+  <script src="/js/shared.js"></script>
+  <script>
+    CareerMirror.ensureBase();
+    CareerMirror.buildNavbar('/');
+    CareerMirror.buildFooter();
+
+    // Simple rope pull interaction -> navigate
+    const knob = document.getElementById('knob');
+    const glow = document.getElementById('glow');
+    const rope = document.getElementById('rope');
+    let isDragging = false;
+    let startY = 0;
+
+    knob.addEventListener('mousedown', (e) => { isDragging = true; startY = e.clientY; knob.style.cursor='grabbing'; });
+    window.addEventListener('mouseup', () => { isDragging = false; knob.style.cursor='grab'; knob.style.top = '200px'; rope.style.height = '220px'; glow.style.opacity = 0; });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const delta = Math.min(120, Math.max(0, e.clientY - startY));
+      knob.style.top = (200 + delta) + 'px';
+      rope.style.height = (220 + delta) + 'px';
+      glow.style.opacity = Math.min(1, delta / 100);
+      if (delta > 110) {
+        window.location.href = '/upload.html';
+      }
+    });
+    // Touch support
+    knob.addEventListener('touchstart', (e) => { isDragging = true; startY = e.touches[0].clientY; });
+    window.addEventListener('touchend', () => { isDragging = false; knob.style.top = '200px'; rope.style.height = '220px'; glow.style.opacity = 0; });
+    window.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      const delta = Math.min(120, Math.max(0, e.touches[0].clientY - startY));
+      knob.style.top = (200 + delta) + 'px';
+      rope.style.height = (220 + delta) + 'px';
+      glow.style.opacity = Math.min(1, delta / 100);
+      if (delta > 110) {
+        window.location.href = '/upload.html';
+      }
+    });
+  </script>
 </body>
 </html>
