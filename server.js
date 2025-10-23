@@ -29,14 +29,20 @@ app.use('/uploads', express.static(uploadsDir));
 // Serve static frontend files from "public" folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== MongoDB Connection =====
-mongoose.connect(process.env.MONGO_URI)
+// ===== MongoDB Connection (optional) =====
+const USE_MEM = !process.env.MONGO_URI;
+if (!USE_MEM) {
+  mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
     .catch(err => console.error('❌ MongoDB connection error:', err));
+} else {
+  console.warn('⚠️  MONGO_URI not set. Using in-memory store (data will not persist).');
+}
 
 // ===== User Schema =====
 const userSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
+    username: { type: String, required: false },
+    email: { type: String, required: true, unique: true },
     password: { type: String, required: true }
 });
 const User = mongoose.model('User', userSchema);
@@ -50,6 +56,24 @@ const messageSchema = new mongoose.Schema({
 });
 const Message = mongoose.model('Message', messageSchema);
 
+// ===== Resume Analysis Schema =====
+const resumeAnalysisSchema = new mongoose.Schema({
+    email: String,
+    originalFilename: String,
+    mimeType: String,
+    text: String,
+    stats: Object,
+    createdAt: { type: Date, default: Date.now }
+});
+const ResumeAnalysis = mongoose.model('ResumeAnalysis', resumeAnalysisSchema);
+
+// ===== In-memory fallback stores =====
+const mem = {
+  users: [], // {email, username, password}
+  analyses: [] // {_id, email, originalFilename, mimeType, text, stats, createdAt}
+};
+const newId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
 // ===== Multer Storage Config for file upload =====
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -61,6 +85,120 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+// ===== External libraries for resume parsing =====
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
+const englishWords = new Set(require('an-array-of-english-words'));
+
+function tokenize(text) {
+    return (text || '')
+        .replace(/\r/g, '')
+        .split(/\n/)
+        .map(line => line.trimEnd())
+        .join('\n');
+}
+
+function analyzeResumeText(rawText) {
+    const text = tokenize(rawText);
+    const lines = text.split(/\n+/);
+    const words = text
+        .toLowerCase()
+        .replace(/[^a-zA-Z\s'-]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+
+    const wordCount = words.length;
+
+    // Spelling detection: words not in dictionary, ignoring short and obvious proper nouns
+    const misspellings = [];
+    for (const w of words) {
+        if (w.length <= 2) continue;
+        if (/^[a-z]+'[a-z]+$/.test(w)) {
+            // contractions are fine
+        }
+        if (!englishWords.has(w)) {
+            misspellings.push(w);
+        }
+    }
+
+    // Deduplicate and cap
+    const missUnique = Array.from(new Set(misspellings)).slice(0, 50);
+
+    // Grammar heuristics
+    const grammarWarnings = [];
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    sentences.forEach((s) => {
+        const sTrim = s.trim();
+        if (!sTrim) return;
+        const tokens = sTrim.split(/\s+/);
+        if (tokens.length > 35) {
+            grammarWarnings.push('Very long sentence; consider splitting: "' + sTrim.slice(0, 60) + '…"');
+        }
+        if (!/^[A-Z]/.test(sTrim)) {
+            grammarWarnings.push('Sentence should start with a capital letter: "' + sTrim.slice(0, 40) + '…"');
+        }
+        if (/\s{2,}/.test(sTrim)) {
+            grammarWarnings.push('Extra spaces detected in: "' + sTrim.slice(0, 60) + '…"');
+        }
+    });
+
+    // Alignment/Bullet consistency heuristics
+    const alignmentIssues = [];
+    const leadingSpaces = lines.map(l => (l.match(/^\s*/)[0] || '').length);
+    const variance = leadingSpaces.length
+        ? leadingSpaces.reduce((a, b) => a + Math.pow(b - (leadingSpaces.reduce((x, y) => x + y, 0) / leadingSpaces.length), 2), 0) / leadingSpaces.length
+        : 0;
+    if (variance > 8) alignmentIssues.push('Inconsistent left alignment/indentation across lines.');
+    const bulletChars = lines
+        .map(l => (l.trim().match(/^[-•–·*]/) ? l.trim()[0] : null))
+        .filter(Boolean);
+    const bulletSet = new Set(bulletChars);
+    if (bulletSet.size > 1) alignmentIssues.push('Mixed bullet styles detected; use a consistent bullet.');
+
+    // Font suggestions (limited without layout)
+    const fontIssues = ['Unable to verify fonts from plain text. Ensure a professional font (e.g., Calibri/Helvetica) and consistent sizes (10–12pt).'];
+
+    // Suggestions
+    const suggestions = [];
+
+    // Word choice improvements (basic heuristic)
+    const improvementMap = {
+        'responsible for': 'led',
+        'worked on': 'delivered',
+        'helped': 'supported',
+        'made': 'created',
+        'did': 'accomplished',
+        'very': 'highly',
+        'hard-working': 'diligent',
+        'team player': 'collaborative',
+        'good': 'strong',
+        'best': 'excellent',
+        'stuff': 'deliverables',
+        'things': 'initiatives',
+        'got': 'achieved'
+    };
+    const wordSuggestions = [];
+    const lowered = text.toLowerCase();
+    Object.entries(improvementMap).forEach(([from, to]) => {
+        if (lowered.includes(from)) {
+            wordSuggestions.push({ from, to, reason: 'Replace vague/weak wording with stronger action.' });
+        }
+    });
+    if (missUnique.length > 0) suggestions.push('Fix spelling mistakes; consider a spell checker.');
+    if (grammarWarnings.length > 0) suggestions.push('Improve sentence structure; aim for concise bullet points.');
+    if (alignmentIssues.length > 0) suggestions.push('Align bullets and sections consistently with uniform spacing.');
+
+    return {
+        wordCount,
+        misspellings: missUnique,
+        grammarWarnings: grammarWarnings.slice(0, 50),
+        alignmentIssues,
+        fontIssues,
+        wordSuggestions,
+        suggestions: suggestions.length ? suggestions : ['Looks good overall; consider quantifying achievements and adding keywords.']
+    };
+}
+
 // ===== Routes =====
 
 // Default route
@@ -68,55 +206,75 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ===== Signup =====
-app.post('/signup', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ success: false, message: 'Username and password required' });
-        }
-
-        const existingUser = await User.findOne({ username });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: 'Username already exists' });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = new User({ username, password: hashedPassword });
-        await newUser.save();
-
-        res.json({ success: true, message: 'Signup successful' });
-
-    } catch (err) {
-        console.error('Signup error:', err);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+// ===== Auth (new API with email) =====
+app.post('/api/users/check-email', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ exists: false, message: 'Email required' });
+    if (USE_MEM) {
+      const user = mem.users.find(u => u.email === email);
+      return res.json({ exists: !!user });
     }
+    const user = await User.findOne({ email });
+    res.json({ exists: !!user });
+  } catch (err) {
+    res.status(500).json({ exists: false });
+  }
 });
 
-// ===== Login =====
-app.post('/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ success: false, message: 'Username and password required' });
-        }
-
-        const user = await User.findOne({ username });
-        if (!user) {
-            return res.status(400).json({ success: false, message: 'Invalid username or password' });
-        }
-
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ success: false, message: 'Invalid username or password' });
-        }
-
-        res.json({ success: true, message: 'Login successful' });
-
-    } catch (err) {
-        console.error('Login error:', err);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password required' });
     }
+    if (USE_MEM) {
+      const existing = mem.users.find(u => u.email === email);
+      if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
+      const hashed = await bcrypt.hash(password, 10);
+      mem.users.push({ email, username: username || email.split('@')[0], password: hashed });
+      return res.json({ success: true, message: 'Signup successful' });
+    }
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'Email already exists' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ username: username || email.split('@')[0], email, password: hashedPassword });
+    await newUser.save();
+    res.json({ success: true, message: 'Signup successful' });
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password required' });
+    }
+    if (USE_MEM) {
+      const user = mem.users.find(u => u.email === email);
+      if (!user) return res.status(400).json({ success: false, which: 'email', message: 'Email not found' });
+      const ok = await bcrypt.compare(password, user.password);
+      if (!ok) return res.status(400).json({ success: false, which: 'password', message: 'Incorrect password' });
+      return res.json({ success: true, message: 'Login successful' });
+    }
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ success: false, which: 'email', message: 'Email not found' });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, which: 'password', message: 'Incorrect password' });
+    }
+    res.json({ success: true, message: 'Login successful' });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 // ===== Upload Notice (Normal file upload) =====
@@ -171,6 +329,88 @@ app.post('/upload_base64', async (req, res) => {
     } catch (err) {
         console.error('Upload Base64 error:', err);
         res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// ===== Resume Analyze =====
+app.post('/api/resume/analyze', upload.single('resume'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'Resume file is required' });
+        }
+        const { email } = req.body;
+        const filePath = req.file.path;
+        const mime = req.file.mimetype;
+        let text = '';
+        if (mime === 'application/pdf') {
+            const data = await pdfParse(fs.readFileSync(filePath));
+            text = data.text || '';
+        } else if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            const result = await mammoth.extractRawText({ path: filePath });
+            text = result.value || '';
+        } else if (mime === 'text/plain') {
+            text = fs.readFileSync(filePath, 'utf8');
+        } else if (mime === 'application/msword') {
+            // .doc not supported by mammoth without extra deps
+            text = '';
+        } else {
+            // Attempt to read as text fallback
+            try { text = fs.readFileSync(filePath, 'utf8'); } catch { text = ''; }
+        }
+
+        const stats = analyzeResumeText(text);
+        let analysisId = null;
+        if (USE_MEM) {
+            analysisId = newId();
+            mem.analyses.push({ _id: analysisId, email: email || null, originalFilename: req.file.originalname, mimeType: mime, text, stats, createdAt: new Date() });
+            return res.json({ success: true, analysisId, analysis: stats, limited: mime === 'application/msword' && text.length === 0 });
+        } else {
+            const saved = await new ResumeAnalysis({
+                email: email || null,
+                originalFilename: req.file.originalname,
+                mimeType: mime,
+                text,
+                stats
+            }).save();
+            return res.json({ success: true, analysisId: saved._id.toString(), analysis: saved.stats, limited: mime === 'application/msword' && text.length === 0 });
+        }
+    } catch (err) {
+        console.error('Resume analyze error:', err);
+        res.status(500).json({ success: false, message: 'Failed to analyze resume' });
+    }
+});
+
+app.get('/api/resume/analysis/:id', async (req, res) => {
+    try {
+        if (USE_MEM) {
+            const doc = mem.analyses.find(a => a._id === req.params.id);
+            if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
+            return res.json({ success: true, analysis: doc.stats });
+        }
+        const doc = await ResumeAnalysis.findById(req.params.id);
+        if (!doc) return res.status(404).json({ success: false, message: 'Not found' });
+        res.json({ success: true, analysis: doc.stats });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// ===== Mock interview simple chat API =====
+app.post('/api/mock/chat', async (req, res) => {
+    try {
+        const { message } = req.body || {};
+        const msg = (message || '').toLowerCase();
+        let reply = '';
+        if (!msg) reply = 'Hello! Ask me a mock interview question or say "ask me" to begin.';
+        else if (/(ask|start)/.test(msg)) reply = 'Tell me about yourself. Keep it under 90 seconds and focus on achievements.';
+        else if (/strength/.test(msg)) reply = 'A strong answer focuses on 1-2 strengths with examples. What is one strength you bring?';
+        else if (/weakness|improv/.test(msg)) reply = 'Pick a real, non-critical weakness and show how you are improving it.';
+        else if (/salary/.test(msg)) reply = 'You can say you are open based on market data and overall fit; ask for the range.';
+        else if (/why.*hire/.test(msg)) reply = 'Tie your skills to the job impact with a quantifiable example from your resume.';
+        else reply = 'Good point. Can you add a metric or describe the impact in numbers?';
+        res.json({ success: true, reply });
+    } catch (err) {
+        res.status(500).json({ success: false });
     }
 });
 

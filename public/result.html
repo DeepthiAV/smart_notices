@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Resume Analysis • Career Mirror</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/css/base.css">
+  <style>
+    .wrap { min-height: calc(100vh - 64px); padding: 32px 16px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .card { background: var(--card-bg); border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+    .title { font-weight: 700; margin-bottom: 8px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { background: #eef2ff; color: #4f46e5; padding: 6px 10px; border-radius: 999px; font-size: .85rem; }
+    .list { margin: 0; padding-left: 18px; }
+    .actions { display: flex; gap: 12px; margin-top: 16px; }
+    .button { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: 0; border-radius: 12px; padding: 12px 16px; cursor: pointer; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="bg-3d" aria-hidden="true"><div class="orbs"><div class="orb"></div><div class="orb"></div><div class="orb"></div></div></div>
+  <div class="wrap container">
+    <h1>Resume analysis</h1>
+    <div class="grid">
+      <div class="card">
+        <div class="title">Summary</div>
+        <div id="summary"></div>
+        <div class="actions">
+          <a class="button" href="mock.html">Practice for mock interview</a>
+          <a class="button" href="/upload.html">Analyze another</a>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title">Spelling issues</div>
+        <div id="spelling"></div>
+      </div>
+      <div class="card">
+        <div class="title">Grammar warnings</div>
+        <ul id="grammar" class="list"></ul>
+      </div>
+      <div class="card">
+        <div class="title">Alignment and formatting</div>
+        <ul id="alignment" class="list"></ul>
+      </div>
+      <div class="card">
+        <div class="title">Word choice suggestions</div>
+        <ul id="wordSuggestions" class="list"></ul>
+      </div>
+      <div class="card">
+        <div class="title">General suggestions</div>
+        <ul id="suggestions" class="list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared.js"></script>
+  <script>
+    CareerMirror.ensureBase();
+    CareerMirror.buildNavbar('/upload.html');
+    CareerMirror.buildFooter();
+
+    const analysisStr = sessionStorage.getItem('lastAnalysis');
+    if (!analysisStr) {
+      window.location.href = 'upload.html';
+    } else {
+      const a = JSON.parse(analysisStr);
+      document.getElementById('summary').innerHTML = `<div class="chips"><span class="chip">Words: ${a.wordCount}</span><span class=\"chip\">Spelling miss: ${a.misspellings?.length||0}</span></div>`;
+      const spelling = document.getElementById('spelling');
+      spelling.textContent = a.misspellings && a.misspellings.length ? a.misspellings.join(', ') : 'No obvious spelling issues found.';
+
+      const grammar = document.getElementById('grammar');
+      (a.grammarWarnings || []).forEach(g => { const li = document.createElement('li'); li.textContent = g; grammar.appendChild(li); });
+      if (!a.grammarWarnings || !a.grammarWarnings.length) { const li = document.createElement('li'); li.textContent = 'No major grammar warnings detected.'; grammar.appendChild(li); }
+
+      const alignment = document.getElementById('alignment');
+      (a.alignmentIssues || []).forEach(g => { const li = document.createElement('li'); li.textContent = g; alignment.appendChild(li); });
+      if (!a.alignmentIssues || !a.alignmentIssues.length) { const li = document.createElement('li'); li.textContent = 'Alignment looks consistent.'; alignment.appendChild(li); }
+
+      const wordS = document.getElementById('wordSuggestions');
+      (a.wordSuggestions || []).forEach(s => { const li = document.createElement('li'); li.textContent = `Instead of "${s.from}", use "${s.to}" — ${s.reason}`; wordS.appendChild(li); });
+      if (!a.wordSuggestions || !a.wordSuggestions.length) { const li = document.createElement('li'); li.textContent = 'No obvious wording improvements detected.'; wordS.appendChild(li); }
+
+      const sugg = document.getElementById('suggestions');
+      (a.suggestions || []).forEach(s => { const li = document.createElement('li'); li.textContent = s; sugg.appendChild(li); });
+    }
+  </script>
+</body>
+</html>

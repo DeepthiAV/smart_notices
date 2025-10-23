@@ -2,68 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Upload Notice</title>
+  <title>Upload Resume • Career Mirror</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/css/base.css">
   <style>
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(to right, #ff6a00, #ee0979);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding-top: 50px;
-      color: white;
-    }
-    .box {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 30px;
-      border-radius: 15px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-      width: 90%;
-      max-width: 500px;
-      text-align: center;
-    }
-    input[type="file"], textarea {
-      width: 100%;
-      padding: 10px;
-      margin: 10px 0;
-      border: none;
-      border-radius: 8px;
-    }
-    textarea {
-      resize: vertical;
-      height: 100px;
-      font-size: 16px;
-    }
-    .btn {
-      background-color: #ff3c74;
-      color: white;
-      font-weight: bold;
-      padding: 12px 20px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-    .btn:hover {
-      background-color: #c41b50;
-    }
+    .wrap { min-height: calc(100vh - 64px); display: grid; place-items: center; padding: 32px 16px; }
+    .card { background: var(--card-bg); width: 100%; max-width: 640px; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.08); border: 1px solid #e5e7eb; }
+    .card-title { font-size: 1.25rem; font-weight: 700; }
+    .input { width: 100%; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 10px; margin-top: 8px; font-family: inherit; }
+    .hint { color: #6b7280; font-size: .95rem; margin-top: 4px; }
+    .button { margin-top: 16px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: 0; border-radius: 12px; padding: 12px 16px; cursor: pointer; font-weight: 600; }
+    .button[disabled] { opacity: .5; cursor: not-allowed; }
+    .row { display: grid; gap: 16px; }
+    .uploader { display: flex; align-items: center; justify-content: center; border: 2px dashed #d1d5db; border-radius: 14px; padding: 26px; background: #fafafa80; cursor: pointer; text-align: center; }
+    .uploader:hover { background: #ffffff; }
+    .tag { display: inline-block; background: #eef2ff; color: #4f46e5; padding: 4px 8px; border-radius: 999px; font-size: .8rem; margin-left: 10px; }
+    .center { text-align: center; }
   </style>
 </head>
 <body>
-
-  <div class="box">
-    <h2>Upload Notice</h2>
-    <form id="uploadForm">
-      <textarea id="noticeText" placeholder="Enter your notice..."></textarea>
-      <input type="file" id="imageInput" accept="image/*">
-      <button type="submit" class="btn">Upload</button>
-    </form>
+  <div class="bg-3d" aria-hidden="true">
+    <div class="orbs"><div class="orb"></div><div class="orb"></div><div class="orb"></div></div>
   </div>
 
-  <script src="upload.js"></script>
+  <div class="wrap container">
+    <div class="card">
+      <div class="card-title">Upload your resume <span class="tag">PDF / DOCX / TXT</span></div>
+      <div class="hint">We will analyze spelling, grammar, and alignment to suggest improvements.</div>
+
+      <label class="uploader" for="resumeInput">
+        <div>
+          <div style="font-weight:600">Drop your file here or click to choose</div>
+          <div class="hint">Max 10MB. We support .pdf, .docx, .txt</div>
+        </div>
+      </label>
+      <input id="resumeInput" type="file" accept=".pdf,.doc,.docx,.txt" style="display:none" />
+      <div id="fileName" class="hint"></div>
+
+      <div class="row" style="margin-top: 20px;">
+        <label for="email" style="font-weight:600">Enter your email</label>
+        <input id="email" class="input" type="email" placeholder="you@example.com" />
+        <button id="proceed" class="button" disabled>Proceed</button>
+        <div id="status" class="hint"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared.js"></script>
+  <script src="/upload.js"></script>
+  <script>
+    CareerMirror.ensureBase();
+    CareerMirror.buildNavbar('/upload.html');
+    CareerMirror.buildFooter();
+  </script>
 </body>
 </html>

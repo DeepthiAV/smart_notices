@@ -1,46 +1,32 @@
-document.addEventListener("DOMContentLoaded", () => {
-    const form = document.getElementById("signupForm");
-    const msg = document.getElementById("msg");
+document.addEventListener('DOMContentLoaded', () => {
+  const url = new URL(window.location.href);
+  const prefill = url.searchParams.get('email');
+  if (prefill) document.getElementById('email').value = prefill;
+});
 
-    form.addEventListener("submit", async function (e) {
-        e.preventDefault(); // stop form from refreshing
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const msg = document.getElementById('msg');
+  msg.textContent = 'Creating account...';
 
-        const username = document.getElementById("username").value.trim();
-        const password = document.getElementById("password").value;
-
-        // Clear old messages
-        msg.textContent = "";
-
-        try {
-            const res = await fetch("/signup", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password })
-            });
-
-            // Try parsing JSON safely
-            let data;
-            try {
-                data = await res.json();
-            } catch {
-                throw new Error("Invalid server response");
-            }
-
-            if (res.ok) {
-                msg.style.color = "lightgreen";
-                msg.textContent = "Signup successful! Redirecting...";
-                setTimeout(() => {
-                    window.location.href = "login.html";
-                }, 1500);
-            } else {
-                msg.style.color = "red";
-                msg.textContent = data.message || "Signup failed";
-            }
-
-        } catch (error) {
-            console.error("Signup error:", error);
-            msg.style.color = "red";
-            msg.textContent = "An error occurred. Please try again.";
-        }
+  try {
+    const res = await fetch('/api/signup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, username, password })
     });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      msg.textContent = 'Account created! Redirecting to login...';
+      setTimeout(() => { window.location.href = `login.html?email=${encodeURIComponent(email)}`; }, 1000);
+    } else {
+      msg.textContent = data.message || 'Signup failed';
+      msg.style.color = 'red';
+    }
+  } catch (err) {
+    msg.textContent = 'Server error';
+    msg.style.color = 'red';
+  }
 });

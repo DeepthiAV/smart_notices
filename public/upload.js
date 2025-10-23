@@ -1,65 +1,61 @@
-window.addEventListener('DOMContentLoaded', () => {
-    const username = sessionStorage.getItem("loggedInUser");
-    if (!username) {
-        alert("Please login first.");
-        window.location.href = "login.html";
-        return;
-    }
-});
+// New upload flow: choose resume, enter email, proceed -> login/signup -> analyze -> results
+(function () {
+  const resumeInput = document.getElementById('resumeInput');
+  const fileNameEl = document.getElementById('fileName');
+  const emailEl = document.getElementById('email');
+  const proceedBtn = document.getElementById('proceed');
+  const statusEl = document.getElementById('status');
 
-const form = document.getElementById('uploadForm');
+  let selectedFile = null;
 
-form.addEventListener('submit', async function (e) {
-    e.preventDefault();
+  function updateProceedState() {
+    const hasFile = !!selectedFile;
+    const hasEmail = !!emailEl.value && /@/.test(emailEl.value);
+    proceedBtn.disabled = !(hasFile && hasEmail);
+  }
 
-    const username = sessionStorage.getItem("loggedInUser");
-    const notice = document.getElementById("noticeText").value.trim();
-    const fileInput = document.getElementById("imageInput");
-    const file = fileInput.files[0];
+  resumeInput.addEventListener('change', () => {
+    selectedFile = resumeInput.files && resumeInput.files[0] ? resumeInput.files[0] : null;
+    fileNameEl.textContent = selectedFile ? `${selectedFile.name} (${Math.round(selectedFile.size/1024)} KB)` : '';
+    updateProceedState();
+  });
 
-    if (!notice && !file) {
-        alert("Please enter text or choose an image");
-        return;
-    }
+  emailEl.addEventListener('input', updateProceedState);
 
-    let imageBase64 = null;
+  proceedBtn.addEventListener('click', async () => {
+    if (!selectedFile || !emailEl.value) return;
+    statusEl.textContent = 'Checking account...';
 
-    if (file) {
-        // Convert file to Base64
-        imageBase64 = await toBase64(file);
-    }
+    // Convert file to base64 and store temporarily
+    const base64 = await toBase64(selectedFile);
+    sessionStorage.setItem('pendingResumeBase64', base64);
+    sessionStorage.setItem('pendingResumeName', selectedFile.name);
+    sessionStorage.setItem('pendingResumeType', selectedFile.type || 'application/octet-stream');
+    sessionStorage.setItem('pendingEmail', emailEl.value.trim());
 
     try {
-        const res = await fetch("/upload_base64", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                username: username,
-                text: notice,
-                imageBase64: imageBase64
-            })
-        });
-
-        const data = await res.json();
-
-        if (res.ok) {
-            alert("Upload successful!");
-            window.location.href = "display.html";
-        } else {
-            alert(data.message || "Failed to upload notice");
-        }
-    } catch (err) {
-        alert("Upload failed. Check connection.");
-        console.error("Upload error:", err);
+      const res = await fetch('/api/users/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailEl.value.trim() })
+      });
+      const data = await res.json();
+      if (data.exists) {
+        window.location.href = `login.html?email=${encodeURIComponent(emailEl.value.trim())}`;
+      } else {
+        window.location.href = `signup.html?email=${encodeURIComponent(emailEl.value.trim())}`;
+      }
+    } catch (e) {
+      statusEl.textContent = 'Server error. Try again.';
     }
-});
+  });
 
-// Helper function to convert file → Base64 string
-function toBase64(file) {
+  function toBase64(file) {
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = (error) => reject(error);
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
     });
-}
+  }
+})();
